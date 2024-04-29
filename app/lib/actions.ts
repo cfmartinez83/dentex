@@ -21,6 +21,12 @@ const FormSchema = z.object({
     date: z.string(),
 });
 
+const CustomerFormSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  photo: z.string(),
+});
+
 export type State = {
   errors?: {
     customerId?: string[];
@@ -32,6 +38,45 @@ export type State = {
 
 const CreateInvoice = FormSchema.omit({ id: true, date: true });
 const UpdateInvoice = FormSchema.omit({ id: true, date: true });
+
+const CreateCustomer = CustomerFormSchema.omit({ id: true });
+const UpdateCustomer = CustomerFormSchema.omit({ id: true });
+
+export async function createCustomer(prevState: State, formData: FormData) {
+  // Validate form using Zod
+  const validatedFields = CreateCustomer.safeParse({
+    name: formData.get('name'),
+    photo: formData.get('photo'),
+  });
+ 
+  // If form validation fails, return errors early. Otherwise, continue.
+  if (!validatedFields.success) {
+    return {
+      errors: validatedFields.error.flatten().fieldErrors,
+      message: 'Missing Fields. Failed to Create Customer.',
+    };
+  }
+ 
+  // Prepare data for insertion into the database
+  const { name, photo } = validatedFields.data;
+ 
+  // Insert data into the database
+  try {
+    await sql`
+      INSERT INTO customers (id, name, photo)
+      VALUES (${name}, ${photo})
+    `;
+  } catch (error) {
+    // If a database error occurs, return a more specific error.
+    return {
+      message: 'Database Error: Failed to Create Customers.',
+    };
+  }
+ 
+  // Revalidate the cache for the invoices page and redirect the user.
+  revalidatePath('/dashboard/customers');
+  redirect('/dashboard/customers');
+}
 
 export async function createInvoice(prevState: State, formData: FormData) {
   // Validate form using Zod
@@ -94,7 +139,27 @@ export async function updateInvoice(id: string, formData: FormData) {
     revalidatePath('/dashboard/invoices');
     redirect('/dashboard/invoices');
 }
+
+export async function updateCustomer(id: string, formData: FormData) {
+  const { name, photo } = UpdateCustomer.parse({
+    name: formData.get('name'),
+    photo: formData.get('photo'),
+  });
   
+  try {
+    await sql`
+        UPDATE invoices
+        SET name = ${name}, photo = ${photo}
+        WHERE id = ${id}
+      `;
+  } catch (error) {
+    return { message: 'Database Error: Failed to Update Customer.' };
+  }
+ 
+  revalidatePath('/dashboard/invoices');
+  redirect('/dashboard/invoices');
+}
+
 export async function deleteInvoice(id: string) {
     try {
       await sql`DELETE FROM invoices WHERE id = ${id}`;
@@ -104,6 +169,17 @@ export async function deleteInvoice(id: string) {
       return { message: 'Database Error: Failed to Delete Invoice.' };
     }
 }
+
+export async function deleteCustomer(id: string) {
+  try {
+    await sql`DELETE FROM customers WHERE id = ${id}`;
+    revalidatePath('/dashboard/customers');
+    return { message: 'Deleted Customer.' };
+  } catch (error) {
+    return { message: 'Database Error: Failed to Delete Customer.' };
+  }
+}
+
 
 export async function authenticate(
   prevState: string | undefined,
